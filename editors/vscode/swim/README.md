@@ -21,3 +21,6 @@ code --install-extension swim-language-0.1.0.vsix
 
 You can also copy `syntaxes/swim.tmLanguage.json` into any editor that supports
 TextMate grammars (Sublime Text, TextMate, Zed, etc.).
+
+The generated `.vsix` is a build artifact: it is git-ignored (`*.vsix`), so
+never commit or push it. Publish it as a release asset instead if needed.
