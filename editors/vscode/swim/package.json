@@ -1,0 +1,35 @@
+{
+  "name": "swim-language",
+  "displayName": "swim",
+  "description": "Syntax highlighting for swim, a Swift-syntax language that compiles to Nim.",
+  "version": "0.1.0",
+  "publisher": "swim-lang",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "swim",
+        "aliases": [
+          "swim",
+          "sw"
+        ],
+        "extensions": [
+          ".sw"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "swim",
+        "scopeName": "source.swim",
+        "path": "./syntaxes/swim.tmLanguage.json"
+      }
+    ]
+  }
+}
