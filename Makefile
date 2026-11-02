@@ -24,7 +24,8 @@ examples:
 	done
 
 check:
-	@for f in examples/*.sw examples/programs/*.sw tests/cases/*.sw; do \
+	@for f in examples/*.sw examples/programs/*.sw tests/cases/*.sw \
+		tests/projects/*/main.sw; do \
 		$(SWIM) check "$$f" >/dev/null || exit 1; \
 	done
 	@echo "all examples and tests type-check"

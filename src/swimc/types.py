@@ -38,6 +38,22 @@ INT_KINDS = {"int", "int8", "int16", "int32", "int64",
 FLOAT_KINDS = {"float", "float32", "float64"}
 
 # Names that must be mangled because they collide with Nim / runtime symbols.
+# Protocol names that swim implements natively even though they are not declared
+# in the project (mapped to Nim concepts or synthesized members).
+# Attributes that are either harmless or implemented by swim.
+ALLOWED_ATTRIBUTES = {
+    "main", "discardableResult", "inlinable", "inline", "usableFromInline",
+    "nonobjc", "objc", "available", "escaping", "autoclosure", "testable",
+    "frozen",
+}
+
+UNSUPPORTED_PROPERTY_MODIFIERS = {"weak", "unowned", "lazy"}
+
+BUILTIN_CONFORMANCES = {
+    "Equatable", "Comparable", "Hashable", "CustomStringConvertible",
+    "CaseIterable", "Error", "AnyObject",
+}
+
 RESERVED_TYPE_NAMES = {
     "Option", "Table", "TableRef", "HashSet", "HashSetRef", "seq", "array",
     "string", "int", "float", "bool", "char", "Result", "SomeInteger",
@@ -367,8 +383,35 @@ class Registry:
                         line=getattr(node, "line", None),
                         col=getattr(node, "col", None), hint=hint)
 
+    def validate_attributes(self, node: Any) -> None:
+        for attr in getattr(node, "attributes", []) or []:
+            base = attr.split(".")[0]
+            if base not in ALLOWED_ATTRIBUTES:
+                self.error(
+                    f"attribute '@{attr}' is not supported by swim "
+                    "(property wrappers and custom attributes have no "
+                    "semantics)", node)
+
+    def _validate_conformance(self, name: str, node: Any) -> None:
+        if name in self.types:
+            info = self.types[name]
+            if info.kind != "protocol":
+                self.error(f"'{name}' is a {info.kind}, not a protocol", node)
+            return
+        if name in BUILTIN_CONFORMANCES:
+            return
+        self.error(
+            f"unknown protocol '{name}'; swim supports user-declared protocols "
+            "and Equatable, Comparable, Hashable, "
+            "CustomStringConvertible, CaseIterable, Error",
+            node,
+        )
+
     # ------------------------------------------------------------------ build
     def _build(self) -> None:
+        # Pass 0: reject attributes that would be silently ignored
+        for decl in self.module.decls:
+            self.validate_attributes(decl)
         # Pass 1: create TypeInfos and collect aliases
         for decl in self.module.decls:
             if isinstance(decl, A.StructDecl):
@@ -437,11 +480,31 @@ class Registry:
                 t.name for t in getattr(decl, "conformances", [])
                 if isinstance(t, A.NamedType)
             )
+        for conformance in info.conformances:
+            self._validate_conformance(conformance, decl)
+        if info.kind == "protocol":
+            for inherited in getattr(decl, "inherits", []) or []:
+                if isinstance(inherited, A.NamedType):
+                    self._validate_conformance(inherited.name, decl)
         for member in members:
             self._add_member(info, member, env)
 
     def _add_member(self, info: TypeInfo, member: Any, env: dict) -> None:
+        self.validate_attributes(member)
         mods = set(getattr(member, "modifiers", []))
+        if isinstance(member, A.DeinitDecl):
+            self.error("deinit is not supported by swim: ARC releases "
+                       "objects automatically and there are no cleanup hooks",
+                       member)
+        if isinstance(member, A.VarDecl):
+            bad = mods & UNSUPPORTED_PROPERTY_MODIFIERS
+            if bad:
+                self.error(f"'{sorted(bad)[0]}' properties are not supported "
+                           "by swim yet", member)
+            for accessor in member.accessors:
+                if accessor.kind in ("willSet", "didSet"):
+                    self.error("property observers (willSet/didSet) are not "
+                               "supported by swim yet", member)
         is_static = "static" in mods or "class" in mods
         if isinstance(member, A.VarDecl):
             modifiers = mods
@@ -566,10 +629,14 @@ class Registry:
             if sup_name in self.protocols:
                 info.conformances.append(sup_name)
             elif sup_name in self.types:
-                info.superclass = self.types[sup_name]
+                target_info = self.types[sup_name]
+                if target_info.kind != "class":
+                    self.error(f"'{sup_name}' is a {target_info.kind}, not a "
+                               "class", info.decl)
+                info.superclass = target_info
             else:
-                # unknown external class: ignore
-                pass
+                self.error(f"unknown superclass or protocol '{sup_name}'",
+                           info.decl)
         # remove protocol names that were resolved as superclass already
         info.conformances = [c for c in info.conformances
                              if c not in self.types
@@ -587,6 +654,9 @@ class Registry:
             name = "Dictionary"
         if name is None:
             self.error("unsupported extension target", decl)
+        for conformance in getattr(decl, "conformances", []) or []:
+            if isinstance(conformance, A.NamedType):
+                self._validate_conformance(conformance.name, decl)
         ext = self.extensions.setdefault(name, ExtensionInfo(target_name=name))
         env: dict = {}
         if isinstance(target, A.NamedType):
@@ -600,7 +670,19 @@ class Registry:
             elif name == "Set":
                 env = {"Element": Ty.generic("T")}
         for member in decl.members:
+            self.validate_attributes(member)
             mods = set(getattr(member, "modifiers", []))
+            if isinstance(member, A.VarDecl):
+                bad = mods & UNSUPPORTED_PROPERTY_MODIFIERS
+                if bad:
+                    self.error(f"'{sorted(bad)[0]}' properties are not "
+                               "supported by swim yet", member)
+                for accessor in member.accessors:
+                    if accessor.kind in ("willSet", "didSet"):
+                        self.error("property observers (willSet/didSet) are "
+                                   "not supported by swim yet", member)
+            if isinstance(member, A.DeinitDecl):
+                self.error("deinit is not supported by swim yet", member)
             is_static = "static" in mods or "class" in mods
             if isinstance(member, A.FuncDecl):
                 fi = self._func_info(member, owner=None, env=env)

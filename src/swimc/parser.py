@@ -179,7 +179,11 @@ class Parser:
             top_let_tuple = (
                 (self.at_kw("let") or self.at_kw("var")) and
                 self.peek(1).kind == PUNCT and self.peek(1).value == "(")
-            if self.starts_decl() and not top_let_tuple:
+            top_let_discard = (
+                (self.at_kw("let") or self.at_kw("var")) and
+                self.peek(1).kind == IDENT and self.peek(1).value == "_")
+            if self.starts_decl() and not top_let_tuple and \
+                    not top_let_discard:
                 decl = self.parse_decl(attrs, mods)
                 decls.append(decl)
                 top_items.append(decl)
@@ -313,7 +317,9 @@ class Parser:
         generics = self.parse_generic_params_opt()
         params = self.parse_params()
         while True:
-            if self.at_kw("throws") or self.at_kw("rethrows") or self.at_kw("async"):
+            if self.at_kw("async"):
+                self.error("async functions are not supported by swim yet")
+            if self.at_kw("throws") or self.at_kw("rethrows"):
                 self.advance()
             else:
                 break
@@ -321,7 +327,9 @@ class Parser:
         if self.consume_op("->"):
             ret = self.parse_type()
         while True:
-            if self.at_kw("throws") or self.at_kw("rethrows") or self.at_kw("async"):
+            if self.at_kw("async"):
+                self.error("async functions are not supported by swim yet")
+            if self.at_kw("throws") or self.at_kw("rethrows"):
                 self.advance()
             elif self.at_kw("where"):
                 self.parse_where_constraints(generics)
@@ -343,8 +351,10 @@ class Parser:
             self.advance()
             failable = True
         params = self.parse_params()
-        while self.at_kw("throws") or self.at_kw("rethrows") or self.at_kw("async"):
+        while self.at_kw("throws") or self.at_kw("rethrows"):
             self.advance()
+        if self.at_kw("async"):
+            self.error("async initializers are not supported by swim yet")
         body: list = []
         if self.at_punct("{"):
             body = self.parse_block()
@@ -1200,8 +1210,7 @@ class Parser:
             return A.TryExpr(mode=mode, expr=operand, line=tok.line,
                              col=tok.col)
         if tok.kind == KEYWORD and tok.value == "await":
-            self.advance()
-            return self.parse_unary()
+            self.error("'await' is not supported: swim has no concurrency yet")
         return self.parse_postfix()
 
     def parse_postfix(self) -> A.Expr:
@@ -1252,7 +1261,10 @@ class Parser:
                 self.advance()
                 expr = A.ForceExpr(operand=expr, line=tok.line, col=tok.col)
                 continue
-            if tok.kind == PUNCT and tok.value == "{" and self.no_trailing == 0:
+            if tok.kind == PUNCT and tok.value == "{" and self.no_trailing == 0 \
+                    and isinstance(expr, (A.CallExpr, A.MemberExpr, A.Ident,
+                                          A.SubscriptExpr, A.TryExpr,
+                                          A.ForceExpr)):
                 closure = self.parse_closure()
                 if isinstance(expr, A.CallExpr) and expr.trailing_closure is None:
                     expr.trailing_closure = closure

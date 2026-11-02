@@ -356,6 +356,11 @@ class CodeGen:
                 cn = self.concept_nim(c)
                 if cn is not None:
                     cons_parts.append(cn)
+                else:
+                    self.error(f"unknown protocol constraint '{c}'; swim "
+                               "supports user protocols and Equatable, "
+                               "Comparable, Hashable, "
+                               "CustomStringConvertible, CaseIterable, Error")
             if cons_parts:
                 parts.append(f"{nim_ident(name)}: {'|'.join(cons_parts)}")
             else:
@@ -1362,6 +1367,7 @@ class CodeGen:
         saved_forwarded = self._forwarded_local
         self.local_func_decls = {}
         self._forwarded_local = set()
+        emitted_before = len(self.out)
         try:
             if job.kind == "init" and job.owner is not None:
                 for f in job.owner.fields:
@@ -1386,6 +1392,8 @@ class CodeGen:
                             self.emit_local_forward(stmt)
                 for stmt in body:
                     self.gen_stmt(stmt)
+            if len(self.out) == emitted_before:
+                self.line("discard")
         finally:
             self.local_func_decls = saved_locals
             self._forwarded_local = saved_forwarded
@@ -1487,6 +1495,13 @@ class CodeGen:
         if stmt.names:
             self.gen_destructure_stmt(stmt)
             return
+        if stmt.name == "_":
+            code, ty = self.gen_expr(stmt.init, None)
+            if ty.is_void:
+                self.code(code)
+            else:
+                self.code(f"discard {code}")
+            return
         declared = self.reg.resolve_type(stmt.ty) if stmt.ty is not None else None
         if stmt.init is None:
             if declared is None:
@@ -1585,6 +1600,14 @@ class CodeGen:
             self.code(code)
 
     def gen_assign(self, expr: A.AssignExpr) -> None:
+        if isinstance(expr.target, A.Ident) and expr.target.name == "_" and \
+                expr.op == "=":
+            code, ty = self.gen_expr(expr.value, None)
+            if ty.is_void:
+                self.code(code)
+            else:
+                self.code(f"discard {code}")
+            return
         target, target_ty = self.gen_assign_target(expr.target, expr.value)
         value_ty_expected = target_ty
         code, got = self.gen_expr(expr.value, value_ty_expected)
@@ -3523,12 +3546,12 @@ class CodeGen:
             eq = f"cast[pointer]({lcode}) == cast[pointer]({rcode})"
             return (eq if op == "===" else f"not ({eq})"), BOOL
         lcode, lty = self.gen_expr(node.left, None)
-        if op in ("+", "-", "*", "/", "%") and lty.kind == "unknown":
-            rcode, rty = self.gen_expr(node.right, expected if expected is not None
-                                       and expected.is_numeric else None)
-        else:
-            rcode, rty = self.gen_expr(node.right,
-                                       lty if lty.is_numeric else None)
+        right_expected = lty if lty.is_numeric else None
+        if lty.kind == "char" and isinstance(node.right, A.StringLit):
+            right_expected = CHAR
+        rcode, rty = self.gen_expr(node.right, right_expected)
+        if rty.kind == "char" and isinstance(node.left, A.StringLit):
+            lcode, lty = self.gen_expr(node.left, CHAR)
         # literal promotion
         if lty.is_float and isinstance(node.right, A.IntLit):
             rcode, rty = self.gen_expr(node.right, FLOAT)
@@ -4663,6 +4686,11 @@ class CodeGen:
                 return f"stringRepeating({scode}, {ncode})", STRING
             if not args:
                 return '""', STRING
+            if len(args) > 1 and not self._has_label(args, "repeating"):
+                labels = ", ".join(a.label or "?" for a in args)
+                self.error("unsupported String initializer with arguments "
+                           f"({labels}); file/data/encoding initializers are "
+                           "not available in swim", node)
             code, got = self.gen_expr(args[0].expr, None)
             if got.kind == "char":
                 return f"${code}", STRING

@@ -522,7 +522,7 @@ swim/
 │   ├── cli.py                # command line interface
 │   └── errors.py             # diagnostics
 ├── runtime/swimrt.nim        # swim runtime + Swift-style standard library
-├── tests/                    # end-to-end tests (20 programs + 15 error cases)
+├── tests/                    # end-to-end tests (21 programs + 22 error cases)
 │   ├── run_tests.py
 │   ├── cases/                # single-file .sw programs
 │   ├── projects/             # multi-file projects (main.sw + modules)
@@ -546,7 +546,7 @@ $ python3 tests/run_tests.py --update   # regenerate expected output
 $ swim test                             # same, from the repository
 ```
 
-Currently **35/35 tests pass**, covering: basic types and control flow,
+Currently **43/43 tests pass**, covering: basic types and control flow,
 functions and closures, optionals, collections, structs, classes and
 inheritance, enums and pattern matching, protocols and generics, error
 handling, string APIs, `@main`, multi-file module imports, plus 15 compile
