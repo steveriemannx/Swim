@@ -4,6 +4,16 @@
   "description": "Syntax highlighting for swim, a Swift-syntax language that compiles to Nim.",
   "version": "0.1.0",
   "publisher": "swim-lang",
+  "license": "MIT",
+  "homepage": "https://github.com/steveriemannx/Swim",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/steveriemannx/Swim.git",
+    "directory": "editors/vscode/swim"
+  },
+  "bugs": {
+    "url": "https://github.com/steveriemannx/Swim/issues"
+  },
   "engines": {
     "vscode": "^1.75.0"
   },
@@ -31,5 +41,11 @@
         "path": "./syntaxes/swim.tmLanguage.json"
       }
     ]
-  }
+  },
+  "files": [
+    "language-configuration.json",
+    "syntaxes/**",
+    "README.md",
+    "LICENSE.txt"
+  ]
 }
